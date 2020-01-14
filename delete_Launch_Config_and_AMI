@@ -1,0 +1,62 @@
+#!/bin/bash
+
+# Static
+profile_name=default
+launch_config_name=$1
+interval=$2
+
+/usr/local/bin/aws autoscaling describe-launch-configurations --profile ${profile_name} --query "LaunchConfigurations[?starts_with(LaunchConfigurationName,'${launch_config_name}')].{LaunchConfigurationName:LaunchConfigurationName,ImageId:ImageId,CreatedTime:CreatedTime}" --output text > $PWD/LaunchConfigurationDataFile
+
+if [ -s $PWD/LaunchConfigurationDataFile ]
+then
+    echo "Launch Configuration file created"
+else
+    echo "No Launch Configuration/s found with '${launch_config_name}' keyword"
+    exit 1
+fi
+
+today=$(date +%Y%m%d)
+
+while read line;
+do
+
+    # Find launch config date from LC creation date 
+    launch_config_date=$(echo $line | awk '{print $1}' | cut -d 'T' -f 1 )
+
+    yy=$(echo ${launch_config_date} | cut -d '-' -f 1 )
+    mm=$(echo ${launch_config_date} | cut -d '-' -f 2 )
+    dd=$(echo ${launch_config_date} | cut -d '-' -f 3 )
+
+    # Find date difference with retention date
+    date_diff=$(( ($(date --date="${today}" +%s) - $(date --date="${yy}${mm}${dd}" +%s) )/(60*60*24) ))
+
+    if [ $date_diff -gt $interval ]
+    then
+
+        echo "---------------------------------"
+
+        launch_config_creation_date=$(echo $line | awk '{print $1 }')
+        launch_config_ami_id=$(echo $line | awk '{print $2 }')
+        launch_config_name=$(echo $line | awk '{print $3 }')
+        
+        echo Following Launch Configuration older than $date_diff day/s
+        
+        /usr/local/bin/aws autoscaling delete-launch-configuration --launch-configuration-name ${launch_config_name} --profile ${profile_name}
+        if  [ $? -eq 0 ] 
+        then
+            echo Launch Configuration $launch_config_name deleted successfully
+        else
+            echo Launch Configuration $launch_config_name deletion not successfull
+        fi        
+
+        /usr/local/bin/aws ec2 deregister-image --image-id ${launch_config_ami_id} --profile ${profile_name}
+        if  [ $? -eq 0 ] 
+        then
+            echo AMI $launch_config_ami_id deleted successfully
+        else
+            echo AMI $launch_config_ami_id deletion not successfull
+        fi        
+        
+    fi
+
+done < LaunchConfigurationDataFile
