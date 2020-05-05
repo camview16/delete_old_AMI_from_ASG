@@ -38,6 +38,7 @@ do
         launch_config_creation_date=$(echo $line | awk '{print $1 }')
         launch_config_ami_id=$(echo $line | awk '{print $2 }')
         launch_config_name=$(echo $line | awk '{print $3 }')
+        launch_config_ami_snapshot=$(aws ec2 describe-images --image-id ${launch_config_ami_id} --profile ${profile_name} --query "Images[0].BlockDeviceMappings[0].Ebs.SnapshotId" --output text)
         
         echo Following Launch Configuration older than $date_diff day/s
         
@@ -47,16 +48,24 @@ do
             echo Launch Configuration $launch_config_name deleted successfully
         else
             echo Launch Configuration $launch_config_name deletion not successfull
-        fi        
-
+        fi
+        
         /usr/local/bin/aws ec2 deregister-image --image-id ${launch_config_ami_id} --profile ${profile_name}
         if  [ $? -eq 0 ] 
         then
             echo AMI $launch_config_ami_id deleted successfully
         else
             echo AMI $launch_config_ami_id deletion not successfull
-        fi        
-        
+        fi
+
+        /usr/local/bin/aws ec2 delete-snapshot --snapshot-id ${launch_config_ami_snapshot} --profile ${profile_name}
+        if  [ $? -eq 0 ]
+        then
+            echo Snapshot $launch_config_ami_snapshot deleted successfully
+        else
+            echo Snapshot $launch_config_ami_snapshot deletion not successfull
+        fi
+
     fi
 
 done < LaunchConfigurationDataFile
